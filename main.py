@@ -3,10 +3,11 @@ import unittest
 
 class Schema:
     class Column:
-        def __init__(self, *, type=None, size=1, name=None):
+        def __init__(self, *, type=None, size=1, name=None, nullable=False):
             self.type = type
             self.size = size
             self.name = name
+            self.nullable = nullable
 
     class Type:
         class Ignored:
@@ -30,6 +31,8 @@ class Schema:
     def validate(self, values):
         for column, value in zip(self.columns, values):
             if not column.type.validate(value):
+                if column.nullable and value is None:
+                    continue
                 return False
         return True
 
@@ -146,6 +149,15 @@ class TestSchema(unittest.TestCase):
         self.assertFalse(Schema.Type.Int.validate((1,)))
         self.assertFalse(Schema.Type.Int.validate([1]))
         self.assertFalse(Schema.Type.Int.validate(['a']))
+
+    def test_nullable_types(self):
+        schema = Schema(
+            Schema.Column(name='id', type=Schema.Type.Int, nullable=True),
+            Schema.Column(name='name', type=Schema.Type.Varchar, nullable=False)
+        )
+        self.assertTrue(schema.validate((None, 'ab')))
+        self.assertTrue(schema.validate((1, 'ab')))
+        self.assertFalse(schema.validate((1, None)))
 
 if __name__ == '__main__':
     unittest.main()
