@@ -1,5 +1,5 @@
 import unittest
-
+from math import log
 
 class Schema:
     class Column:
@@ -12,27 +12,33 @@ class Schema:
     class Type:
         class Ignored:
             @staticmethod
-            def validate(*value):
+            def validate(value, column):
                 return True
 
         class Int:
             @staticmethod
-            def validate(value):
-                return isinstance(value, int)
+            def validate(value, column):
+                if not isinstance(value, int):
+                    return False
+                if value == 0:
+                    return True
+                return int(log(value, 256)) + 1 <= column.size
 
         class Varchar:
             @staticmethod
-            def validate(value):
-                return isinstance(value, str)
+            def validate(value, column):
+                if not isinstance(value, str):
+                    return False
+                return len(value) <= column.size
 
     def __init__(self, *columns):
         self.columns = columns
 
     def validate(self, values):
         for column, value in zip(self.columns, values):
-            if not column.type.validate(value):
-                if column.nullable and value is None:
-                    continue
+            if column.nullable and value is None:
+                continue
+            if not column.type.validate(value, column):
                 return False
         return True
 
@@ -135,7 +141,7 @@ class TestSchema(unittest.TestCase):
     def test_validating_schemas(self):
         schema = Schema(
             Schema.Column(name='id', type=Schema.Type.Int),
-            Schema.Column(name='name', type=Schema.Type.Varchar)
+            Schema.Column(name='name', type=Schema.Type.Varchar, size=10)
         )
         self.assertTrue(schema.validate((1, 'abc')))
         self.assertTrue(schema.validate((2, 'bef')))
@@ -143,21 +149,30 @@ class TestSchema(unittest.TestCase):
         self.assertFalse(schema.validate(('d',)))
 
     def test_int_validator(self):
-        self.assertTrue(Schema.Type.Int.validate(1))
-        self.assertTrue(Schema.Type.Int.validate(3))
-        self.assertFalse(Schema.Type.Int.validate('a'))
-        self.assertFalse(Schema.Type.Int.validate((1,)))
-        self.assertFalse(Schema.Type.Int.validate([1]))
-        self.assertFalse(Schema.Type.Int.validate(['a']))
+        column = Schema.Column(type=Schema.Type.Int)
+        self.assertTrue(Schema.Type.Int.validate(1, column))
+        self.assertTrue(Schema.Type.Int.validate(3, column))
+        self.assertFalse(Schema.Type.Int.validate('a', column))
+        self.assertFalse(Schema.Type.Int.validate((1,), column))
+        self.assertFalse(Schema.Type.Int.validate([1], column))
+        self.assertFalse(Schema.Type.Int.validate(['a'], column))
 
     def test_nullable_types(self):
         schema = Schema(
             Schema.Column(name='id', type=Schema.Type.Int, nullable=True),
-            Schema.Column(name='name', type=Schema.Type.Varchar, nullable=False)
+            Schema.Column(name='name', type=Schema.Type.Varchar, nullable=False, size=10)
         )
         self.assertTrue(schema.validate((None, 'ab')))
         self.assertTrue(schema.validate((1, 'ab')))
         self.assertFalse(schema.validate((1, None)))
+
+    def test_validating_size_variables(self):
+        schema = Schema(
+            Schema.Column(name='id', type=Schema.Type.Int, size=1)
+        )
+        self.assertTrue(schema.validate((1,)))
+        self.assertFalse(schema.validate((256,)))
+        self.assertTrue(schema.validate((255,)))
 
 if __name__ == '__main__':
     unittest.main()
