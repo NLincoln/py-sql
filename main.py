@@ -9,13 +9,30 @@ class Schema:
             self.size = size
             self.name = name
 
-    class Type(Enum):
-        Ignored = 0
-        Int = 1
-        Varchar = 2
+    class Type:
+        class Ignored:
+            @staticmethod
+            def validate(*value):
+                return True
+
+        class Int:
+            @staticmethod
+            def validate(value):
+                return isinstance(value, int)
+
+        class Varchar:
+            @staticmethod
+            def validate(value):
+                return isinstance(value, str)
 
     def __init__(self, *columns):
         self.columns = columns
+
+    def validate(self, values):
+        for column, value in zip(self.columns, values):
+            if not column.type.validate(value):
+                return False
+        return True
 
 
 class DataStore:
@@ -59,6 +76,10 @@ class Table:
         table.store = self.store.get_readonly_copy()
         return table
 
+    def insert_row(self, row):
+        if self.schema.validate(row):
+            self.store.load_row(row)
+
     def get_row(self, index):
         row = self.store.get_row(index=index)
         return tuple([val for val, column in zip(row, self.schema.columns) if column.type != Schema.Type.Ignored])
@@ -99,10 +120,33 @@ class TestTables(unittest.TestCase):
         self.assertEqual(smaller_table.get_row(0), ('abc',))
         self.assertEqual(smaller_table.get_row(1), ('def',))
 
+    def test_schema(self):
+        table = Table(schema=Schema(
+            Schema.Column(type=Schema.Type.Int),
+        ))
+
+        table.insert_row(('a',))
+        self.assertEqual(table.store.get_length(), 0)
+
 
 class TestSchema(unittest.TestCase):
     def test_validating_schemas(self):
-        pass
+        schema = Schema(
+            Schema.Column(name='id', type=Schema.Type.Int),
+            Schema.Column(name='name', type=Schema.Type.Varchar)
+        )
+        self.assertTrue(schema.validate((1, 'abc')))
+        self.assertTrue(schema.validate((2, 'bef')))
+        self.assertFalse(schema.validate(('d', 'def')))
+        self.assertFalse(schema.validate(('d',)))
+
+    def test_int_validator(self):
+        self.assertTrue(Schema.Type.Int.validate(1))
+        self.assertTrue(Schema.Type.Int.validate(3))
+        self.assertFalse(Schema.Type.Int.validate('a'))
+        self.assertFalse(Schema.Type.Int.validate((1,)))
+        self.assertFalse(Schema.Type.Int.validate([1]))
+        self.assertFalse(Schema.Type.Int.validate(['a']))
 
 if __name__ == '__main__':
     unittest.main()
