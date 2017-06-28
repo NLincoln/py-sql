@@ -10,22 +10,33 @@ class Schema:
             self.name = name
 
     class Type(Enum):
-        Int = 0
-        Varchar = 1
+        Ignored = 0
+        Int = 1
+        Varchar = 2
 
     def __init__(self, *columns):
         self.columns = columns
 
 
 class DataStore:
-    def __init__(self):
-        self.rows = []
+    def __init__(self, *, readonly = False, rows=None):
+        if rows is None:
+            rows = []
+        self.rows = list(rows)
+        self.readonly = readonly
 
     def load_row(self, row):
-        self.rows.append(row)
+        if not self.readonly:
+            self.rows.append(row)
+
+    def get_length(self):
+        return len(self.rows)
 
     def get_row(self, index):
         return self.rows[index]
+
+    def get_readonly_copy(self):
+        return DataStore(readonly=True, rows=self.rows)
 
 
 class Table:
@@ -34,14 +45,23 @@ class Table:
         self.schema = schema
         self.store = DataStore()
 
+    def get_columns(self, *columns):
+        schema_columns = []
+        for column in self.schema.columns:
+            if column.name in columns:
+                schema_columns.append(column)
+            else:
+                schema_columns.append(
+                    Schema.Column(type=Schema.Type.Ignored)
+                )
+        schema = Schema(*schema_columns)
+        table = Table(schema=schema)
+        table.store = self.store.get_readonly_copy()
+        return table
 
-class Statements:
-    pass
-
-
-class TestTables(unittest.TestCase):
-    def test_loading_and_getting(self):
-        pass
+    def get_row(self, index):
+        row = self.store.get_row(index=index)
+        return tuple([val for val, column in zip(row, self.schema.columns) if column.type != Schema.Type.Ignored])
 
 
 class TestDataStorage(unittest.TestCase):
@@ -50,9 +70,39 @@ class TestDataStorage(unittest.TestCase):
             Schema.Column(name='id', type=Schema.Type.Int, size=2)
         )
         table = Table(schema=schema)
-        table.store.load_row((2))
+        table.store.load_row(2)
 
-        self.assertEqual(table.store.get_row(table, 0), (2))
+        self.assertEqual(table.store.get_row(0), 2)
+
+    def test_read_only_copy(self):
+        store = DataStore()
+        store.load_row((1, 2, 3))
+        store.load_row((3, 2, 1))
+        copied_store = store.get_readonly_copy()
+        copied_store.load_row((4, 5, 6))
+        self.assertEqual(copied_store.get_length(), 2)
+        with self.assertRaises(IndexError):
+            copied_store.get_row(2)
+
+
+class TestTables(unittest.TestCase):
+    def test_loading_columns(self):
+        schema = Schema(
+            Schema.Column(name='id', type=Schema.Type.Int, size=2),
+            Schema.Column(name='name', type=Schema.Type.Varchar, size=100),
+            Schema.Column(name='lastname', type=Schema.Type.Varchar, size=100),
+        )
+        table = Table(schema=schema)
+        table.store.load_row((1, 'abc', 'whoo'))
+        table.store.load_row((2, 'def', 'hooo'))
+        smaller_table = table.get_columns('name')
+        self.assertEqual(smaller_table.get_row(0), ('abc',))
+        self.assertEqual(smaller_table.get_row(1), ('def',))
+
+
+class TestSchema(unittest.TestCase):
+    def test_validating_schemas(self):
+        pass
 
 if __name__ == '__main__':
     unittest.main()
