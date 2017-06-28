@@ -1,5 +1,4 @@
 import unittest
-from enum import Enum
 
 
 class Schema:
