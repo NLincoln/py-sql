@@ -4,12 +4,20 @@ from math import log
 
 class Schema:
     class Column:
-        def __init__(self, *, type=None, size=1, name=None, nullable=False, default=None):
+        def __init__(self, *,
+                     type=None,
+                     size=1,
+                     name=None,
+                     nullable=False,
+                     default=None,
+                     auto_increment=False
+                     ):
             self.type = type
             self.size = size
             self.name = name
             self.nullable = nullable
             self.default = default
+            self.auto_increment = auto_increment
 
     class Type:
         class Ignored:
@@ -97,6 +105,14 @@ class Table:
                 values.append(row[i])
             elif column.default:
                 values.append(column.default)
+            elif column.auto_increment:
+                if len(self.store.rows) == 0:
+                    values.append(0)
+                else:
+                    values.append(
+                        self.store.rows[-1][i] + 1
+                    )
+
         self.insert_complete_row(row=values)
 
     def get_row(self, index):
@@ -177,6 +193,23 @@ class TestTables(unittest.TestCase):
         self.assertEqual(table.get_row(0), (1, 'abc', 'lolz'))
         self.assertEqual(table.get_row(1), (1, 'abc', 'def'))
 
+    def test_auto_increment(self):
+        table = Table(schema=Schema(
+            Schema.Column(name='id', type=Schema.Type.Int, size=2, auto_increment=True),
+            Schema.Column(name='lastname', type=Schema.Type.Varchar, size=100, default='lolz'),
+        ))
+
+        table.insert_row((), ())
+        table.insert_row((), ())
+        table.insert_row((), ())
+
+        table.insert_row(('id',), (6,))
+        table.insert_row((), ())
+
+        self.assertEqual(table.get_row(1), (1, 'lolz'))
+        self.assertEqual(table.get_row(3), (6, 'lolz'))
+        self.assertEqual(table.get_row(4), (7, 'lolz'))
+
 
 class TestSchema(unittest.TestCase):
     def test_validating_schemas(self):
@@ -250,6 +283,7 @@ class Expressions:
         def func(row):
             return row[value]
         return func
+
 
 class TestQuery(unittest.TestCase):
     def test_simple_where_condition(self):
