@@ -103,6 +103,24 @@ class Table:
         row = self.store.get_row(index=index)
         return tuple([val for val, column in zip(row, self.schema.columns) if column.type != Schema.Type.Ignored])
 
+    def get_copy(self):
+        table = Table(schema=self.schema)
+        table.store = self.store.get_readonly_copy()
+        return table
+
+    def get_data(self):
+        return self.store.get_readonly_copy().rows
+
+    def as_hash(self):
+        result = []
+        for row in self.store.rows:
+            hash_ = {}
+            for i, column in enumerate(self.schema.columns):
+                hash_[column.name] = row[i]
+            result.append(hash_)
+        return result
+
+
 
 class TestDataStorage(unittest.TestCase):
     def test_loading_from_memory(self):
@@ -197,15 +215,61 @@ class TestSchema(unittest.TestCase):
         self.assertFalse(schema.validate((256,)))
         self.assertTrue(schema.validate((255,)))
 
-# class TestQuery(unittest.TestCase):
-#     def test_simple_where_condition(self):
-#         table = Table(schema=Schema(
-#
-#         ))
-#
-#         table.insert_complete_row((1, 'a'))
-#         table.insert_complete_row((2, 'a'))
 
+class QueryBuilder:
+    def __init__(self, table):
+        self.table = table
+        self.conditions = []
+
+    def where(self, expression):
+        table = Table(schema=self.table.schema)
+        for hash_row, row in zip(self.table.as_hash(), self.table.get_data()):
+            if expression(hash_row):
+                table.insert_complete_row(row)
+        self.table = table
+
+    def execute(self):
+        return self.table
+
+
+class Expressions:
+    @staticmethod
+    def equal_to(lhs, rhs):
+        def func(row):
+            return lhs(row) == rhs(row)
+        return func
+
+    @staticmethod
+    def literal(value):
+        def func(row):
+            return value
+        return func
+
+    @staticmethod
+    def column(value):
+        def func(row):
+            return row[value]
+        return func
+
+class TestQuery(unittest.TestCase):
+    def test_simple_where_condition(self):
+        table = Table(schema=Schema(
+            Schema.Column(name='id', type=Schema.Type.Int),
+            Schema.Column(name='name', type=Schema.Type.Varchar),
+        ))
+
+        table.insert_row(('id', 'name'), (1, 'a'))
+        table.insert_row(('id', 'name'), (2, 'a'))
+        table.insert_row(('id', 'name'), (3, 'a'))
+        query = QueryBuilder(table)
+        query.where(
+            Expressions.equal_to(
+                lhs=Expressions.column('id'),
+                rhs=Expressions.literal(2)
+            )
+        )
+        results = query.execute()
+        self.assertEqual(results.get_row(0), (2, 'a'))
 
 if __name__ == '__main__':
     unittest.main()
